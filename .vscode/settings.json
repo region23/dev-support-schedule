@@ -1,0 +1,11 @@
+{
+    "sqltools.connections": [
+        {
+            "previewLimit": 100,
+            "driver": "SQLite",
+            "name": "scheduler bot",
+            "database": "${workspaceFolder:dev-support-schedule}/data/db.sqlite"
+        }
+    ],
+    "sqltools.useNodeRuntime": true
+}
