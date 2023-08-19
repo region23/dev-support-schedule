@@ -30,6 +30,7 @@ func (c *CLI) Start() {
 	for {
 		var choice int
 		fmt.Scan(&choice)
+		//choice = 2
 		c.choiceSwitcher(choice)
 	}
 }
@@ -55,9 +56,17 @@ func (c *CLI) choiceSwitcher(choice int) {
 	case 1:
 		fmt.Println(ch.AllEmployees())
 	case 2:
-		fmt.Println(ch.GenerateSchedule(false))
+		fmt.Println("Введите дату начала недели, на которую надо сформировать расписание, в формате YYYY-MM-DD")
+		fmt.Println("Или нажмите Enter, чтобы сформировать расписание на следующую неделю")
+		var weekStartDate string
+		fmt.Scanln(&weekStartDate)
+		fmt.Println(ch.GenerateSchedule(false, weekStartDate))
 	case 3:
-		fmt.Println(ch.GenerateSchedule(true))
+		fmt.Println("Введите дату начала недели, на которую надо сформировать расписание, в формате YYYY-MM-DD")
+		fmt.Println("Или нажмите Enter, чтобы сформировать расписание на следующую неделю")
+		var weekStartDate string
+		fmt.Scanln(&weekStartDate)
+		fmt.Println(ch.GenerateSchedule(true, weekStartDate))
 	case 4:
 		fmt.Println("Введите статусы сотрудников в формате @nickname status, @nickname2 status, ...")
 		fmt.Println("Возможные статусы: available, sick, vacation, fired")

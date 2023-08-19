@@ -18,6 +18,8 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 )
 
+var weekStartDate string = ""
+
 type Server struct {
 	db                     *sql.DB
 	webhookURL             string
@@ -80,8 +82,14 @@ func (s *Server) parseCommand(commandStr string) models.Command {
 			cmd.Type = "help"
 		case "generate":
 			cmd.Type = "generate"
+			if len(parts) > 2 {
+				weekStartDate = parts[2]
+			}
 		case "save":
 			cmd.Type = "save"
+			if len(parts) > 2 {
+				weekStartDate = parts[2]
+			}
 		case "team":
 			cmd.Type = "team"
 		case "status":
@@ -184,9 +192,9 @@ func (s *Server) handleCommand(command models.Command) string {
 	ch := handlers.NewCommandHandler(s.db)
 	switch command.Type {
 	case "generate":
-		return ch.GenerateSchedule(false)
+		return ch.GenerateSchedule(false, weekStartDate)
 	case "save":
-		return ch.GenerateSchedule(true)
+		return ch.GenerateSchedule(true, weekStartDate)
 	case "team":
 		return ch.AllEmployees()
 	case "status":
@@ -198,7 +206,9 @@ func (s *Server) handleCommand(command models.Command) string {
 	**Привет! Я 🤖 бот, который умеет формировать расписание дежурств.**
 	Я понимаю следующие команды:
 	*/schedule * - показать расписание на следующую неделю
+	*/schedule YYYY-MM-DD * - показать расписание на неделю, начиная с указанной даты
 	*/schedule save* - показать и сохранить расписание на следующую неделю
+	*/schedule save YYYY-MM-DD* - показать и сохранить расписание, на неделю начиная с указанной даты
 	*/schedule team* - команда и её статусы
 	*/schedule status @nickname stat, @nickname2 stat, ...* - обновить статусы сотрудников (stat: available, sick, vacation, fired)
 	*/schedule add @nickname ФИО* - добавить нового сотрудника

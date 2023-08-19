@@ -133,7 +133,10 @@ func GetDutySummary(db *sql.DB, orderById bool, startDate, endDate time.Time) ([
 		query += " ORDER BY duty_type_count ASC, last_duty_date ASC;"
 	}
 
-	rows, err := db.Query(query, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+	startDateStr := startDate.UTC().Format("2006-01-02")
+	endDateStr := endDate.UTC().Format("2006-01-02")
+
+	rows, err := db.Query(query, startDateStr, endDateStr)
 	if err != nil {
 		return nil, err
 	}
@@ -143,9 +146,26 @@ func GetDutySummary(db *sql.DB, orderById bool, startDate, endDate time.Time) ([
 
 	for rows.Next() {
 		var s models.DutySummary
+		var lastDutyDateString sql.NullString
 
-		if err := rows.Scan(&s.UserID, &s.Name, &s.Nickname, &s.Status, &s.DutyType, &s.DutyTypeCount, &s.LastDutyDate); err != nil {
+		if err := rows.Scan(&s.UserID, &s.Name, &s.Nickname, &s.Status, &s.DutyType, &s.DutyTypeCount, &lastDutyDateString); err != nil {
 			return nil, fmt.Errorf("error scanning row: %w", err)
+		}
+
+		if lastDutyDateString.Valid {
+			parsedTime, err := time.Parse("2006-01-02", lastDutyDateString.String)
+			if err != nil {
+				return nil, err
+			}
+
+			s.LastDutyDate = sql.NullTime{
+				Time:  parsedTime,
+				Valid: true,
+			}
+		} else {
+			s.LastDutyDate = sql.NullTime{
+				Valid: false,
+			}
 		}
 
 		stats = append(stats, s)
@@ -158,11 +178,13 @@ func GetDutySummary(db *sql.DB, orderById bool, startDate, endDate time.Time) ([
 func AddScheduleToDutyHistory(db *sql.DB, schedule []models.DutyHistory) error {
 	query := `
 		INSERT INTO duty_history (user_id, name, nickname, duty_date, duty_type)
-		VALUES (?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?)	
 	`
 
 	for _, e := range schedule {
-		_, err := db.Exec(query, e.UserID, e.Name, e.Nickname, e.DutyDate, e.DutyType)
+		// convert Time.Time to string format YYYY-MM-DD
+		dateStr := e.DutyDate.UTC().Format("2006-01-02")
+		_, err := db.Exec(query, e.UserID, e.Name, e.Nickname, dateStr, e.DutyType)
 		if err != nil {
 			return err
 		}
@@ -177,8 +199,10 @@ func DeleteDutyHistoryByPeriod(db *sql.DB, startDate, endDate time.Time) error {
 		DELETE FROM duty_history
 		WHERE duty_date BETWEEN ? AND ?
 	`
+	startDateStr := startDate.UTC().Format("2006-01-02")
+	endDateStr := endDate.UTC().Format("2006-01-02")
 
-	_, err := db.Exec(query, startDate, endDate)
+	_, err := db.Exec(query, startDateStr, endDateStr)
 	if err != nil {
 		return err
 	}

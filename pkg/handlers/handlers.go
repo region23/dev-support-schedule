@@ -5,7 +5,9 @@ import (
 	"dev-support-schedule/pkg/models"
 	"dev-support-schedule/pkg/scheduler"
 	"dev-support-schedule/pkg/storage"
+	"dev-support-schedule/pkg/utils"
 	"log"
+	"time"
 )
 
 type CommandHandler struct {
@@ -18,7 +20,7 @@ func NewCommandHandler(db *sql.DB) *CommandHandler {
 	}
 }
 
-func (ch *CommandHandler) GenerateSchedule(save bool) string {
+func (ch *CommandHandler) GenerateSchedule(save bool, weekStartDateStr string) string {
 	// получить из базы расписание
 	employees, err := storage.LoadEmployees(ch.db)
 	if err != nil {
@@ -32,8 +34,24 @@ func (ch *CommandHandler) GenerateSchedule(save bool) string {
 	}
 
 	// определить какой сейчас квартал и вернуть дату начала квартала
-	quarterStartDate := scheduler.GetQuarterStartDate()
-	weekEndDate := scheduler.GetWeekEndDate()
+	quarterStartDate := utils.GetQuarterStartDate()
+
+	var startDate time.Time
+
+	if weekStartDateStr != "" {
+		startDate, err = time.Parse("2006-01-02", weekStartDateStr)
+		if err != nil {
+			// Логирование ошибки
+			log.Println(err)
+			return "Неверный формат даты начала недели"
+		}
+		startDate = utils.GetWeekStartDate(startDate)
+	} else {
+		// если дата начала недели не задана, то начало следующей недели
+		startDate = utils.NextMonday()
+	}
+
+	weekEndDate := startDate.AddDate(0, 0, 6) // пятница следующей недели
 
 	dutySummary, err := storage.GetDutySummary(ch.db, false, quarterStartDate, weekEndDate)
 	if err != nil {
@@ -42,7 +60,7 @@ func (ch *CommandHandler) GenerateSchedule(save bool) string {
 		return "Не удалось загрузить список сотрудников"
 	}
 
-	messageForBot, schedule, err := scheduler.GetSchedule(dutySummary)
+	messageForBot, schedule, err := scheduler.GetSchedule(dutySummary, startDate)
 	if err != nil {
 		// Логирование ошибки
 		log.Println(err)
@@ -66,8 +84,8 @@ func (ch *CommandHandler) GenerateSchedule(save bool) string {
 
 func (ch *CommandHandler) AllEmployees() string {
 	// определить какой сейчас квартал и вернуть дату начала квартала
-	quarterStartDate := scheduler.GetQuarterStartDate()
-	weekEndDate := scheduler.GetWeekEndDate()
+	quarterStartDate := utils.GetQuarterStartDate()
+	weekEndDate := utils.GetCurrentWeekEndDate()
 
 	dutyStats, err := storage.GetDutySummary(ch.db, true, quarterStartDate, weekEndDate)
 	if err != nil {

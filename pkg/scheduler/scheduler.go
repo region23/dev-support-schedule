@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	rt "github.com/ivahaev/russian-time"
 )
 
 const (
@@ -13,52 +15,6 @@ const (
 	DutyTypeSupport          = "support"
 	NoDuty                   = "no_duty"
 )
-
-func NextMonday() time.Time {
-	today := time.Now().Weekday()
-	var daysToAdd int
-
-	switch today {
-	case time.Monday:
-		daysToAdd = 0
-	case time.Tuesday:
-		daysToAdd = 6
-	case time.Wednesday:
-		daysToAdd = 5
-	case time.Thursday:
-		daysToAdd = 4
-	case time.Friday:
-		daysToAdd = 3
-	case time.Saturday:
-		daysToAdd = 2
-	case time.Sunday:
-		daysToAdd = 1
-	}
-
-	nextMonday := time.Now().AddDate(0, 0, daysToAdd)
-	return nextMonday.Truncate(24 * time.Hour)
-}
-
-// getQuarterStartDate возвращает дату начала текущего квартала.
-func GetQuarterStartDate() time.Time {
-	// получить текущую дату
-	today := time.Now()
-
-	// определить квартал
-	quarter := (today.Month() - 1) / 3
-
-	// вернуть дату начала квартала
-	return time.Date(today.Year(), time.Month(quarter*3+1), 1, 0, 0, 0, 0, time.UTC)
-
-}
-
-// вернуть дату конца текущей недели
-func GetWeekEndDate() time.Time {
-	today := time.Now()
-	weekDay := today.Weekday()
-	daysToAdd := 7 - int(weekDay)
-	return today.AddDate(0, 0, daysToAdd)
-}
 
 // filterEmployee определяет, подходит ли сотрудник для дежурства на основе условий.
 func filterEmployee(employee models.DutySummary, findForInstances bool, expressEmployee *models.DutyHistory) bool {
@@ -87,7 +43,7 @@ func filterEmployee(employee models.DutySummary, findForInstances bool, expressE
 }
 
 // findEmployeeForReleases находит подходящего сотрудника для дежурства типа "Instances release".
-func findEmployeeForReleases(employees []models.DutySummary, findForInstances bool, expressEmployee *models.DutyHistory) (models.DutyHistory, error) {
+func findEmployeeForReleases(employees []models.DutySummary, findForInstances bool, expressEmployee *models.DutyHistory, startDate time.Time) (models.DutyHistory, error) {
 	// на вход получили отсортированный список сотрудников по возрастанию числа дежурств и по дате последнего дежурства
 
 	for _, employee := range employees {
@@ -102,12 +58,12 @@ func findEmployeeForReleases(employees []models.DutySummary, findForInstances bo
 		}
 
 		// Проверяем, что прошло не менее 2 недель с момента последнего дежурства сотрудника.
-		if employee.DutyTypeCount == 0 || (employee.LastDutyDate.Valid && time.Since(employee.LastDutyDate.Time).Hours() >= 14*24) {
+		if employee.DutyTypeCount == 0 || (employee.LastDutyDate.Valid && startDate.Sub(employee.LastDutyDate.Time).Hours() >= 13*24) {
 			return models.DutyHistory{
 				UserID:   employee.UserID,
 				Name:     employee.Name,
 				Nickname: employee.Nickname,
-				DutyDate: NextMonday(),
+				DutyDate: startDate,
 				DutyType: dutyType,
 			}, nil
 		}
@@ -124,7 +80,7 @@ func findEmployeeForReleases(employees []models.DutySummary, findForInstances bo
 }
 
 // findEmployeeForSupport находит подходящего сотрудника для дежурства типа "Support".
-func findEmployeeForSupport(employees []models.DutySummary) ([]models.DutyHistory, error) {
+func findEmployeeForSupport(employees []models.DutySummary, startDate time.Time) ([]models.DutyHistory, error) {
 	// Пройдите по отсортированному списку и выберите дежурных для следующей недели
 	assignedEmployees := []models.DutyHistory{}
 
@@ -139,12 +95,13 @@ func findEmployeeForSupport(employees []models.DutySummary) ([]models.DutyHistor
 		}
 
 		// Проверяем, что прошло не менее 7 дней с момента последнего дежурства сотрудника.
-		if employee.DutyTypeCount == 0 || (employee.LastDutyDate.Valid && time.Since(employee.LastDutyDate.Time).Hours() >= 7*24) {
+		dutyDate := startDate.AddDate(0, 0, len(assignedEmployees))
+		if employee.DutyTypeCount == 0 || (employee.LastDutyDate.Valid && dutyDate.Sub(employee.LastDutyDate.Time).Hours() >= 6*24) {
 			selectedEmployee := models.DutyHistory{
 				UserID:   employee.UserID,
 				Name:     employee.Name,
 				Nickname: employee.Nickname,
-				DutyDate: NextMonday().AddDate(0, 0, len(assignedEmployees)),
+				DutyDate: dutyDate,
 				DutyType: DutyTypeSupport,
 			}
 
@@ -163,29 +120,26 @@ func findEmployeeForSupport(employees []models.DutySummary) ([]models.DutyHistor
 }
 
 // GetSchedule формирует и возвращает расписание на предстоящую неделю.
-func GetSchedule(employees []models.DutySummary) (string, []models.DutyHistory, error) {
-	// узнать какой сегодня день недели и прибавить столько дней, чтобы получить понедельник
-
-	startDate := NextMonday()             // начало следующей недели
-	endDate := startDate.AddDate(0, 0, 4) // пятница следующей недели
+func GetSchedule(employees []models.DutySummary, startDate time.Time) (string, []models.DutyHistory, error) {
+	endDate := startDate.AddDate(0, 0, 6)
 
 	var schedule []models.DutyHistory
 
-	expressEmployee, err := findEmployeeForReleases(employees, false, nil)
+	expressEmployee, err := findEmployeeForReleases(employees, false, nil, startDate)
 	if err != nil {
 		return "", nil, err
 	}
 
 	schedule = append(schedule, expressEmployee)
 
-	instancesEmployee, err := findEmployeeForReleases(employees, true, &expressEmployee)
+	instancesEmployee, err := findEmployeeForReleases(employees, true, &expressEmployee, startDate)
 	if err != nil {
 		return "", nil, err
 	}
 
 	schedule = append(schedule, instancesEmployee)
 
-	supportEmployees, err := findEmployeeForSupport(employees)
+	supportEmployees, err := findEmployeeForSupport(employees, startDate)
 	if err != nil {
 		return "", nil, err
 	}
@@ -194,12 +148,12 @@ func GetSchedule(employees []models.DutySummary) (string, []models.DutyHistory, 
 
 	supportSchedule := ""
 	for _, supportEmploye := range supportEmployees {
-		supportSchedule += fmt.Sprintf("%s - %s\n", supportEmploye.Nickname, supportEmploye.DutyDate.Format("Monday"))
+		supportSchedule += fmt.Sprintf("@%s – %s\n", supportEmploye.Nickname, rt.Time(supportEmploye.DutyDate).Weekday().String())
 	}
 
 	result := fmt.Sprintf(
-		"Всем привет! 👾\n**Расписание для саппорт и релиз инженеров с %s по %s**\n**Релизы**\n%s - Express Release\n%s - Instances release\n\n**Саппорт**\n%s\n\nЛюбезно сгенерировано автоматически 🤖\nP.S. Если заметите аномалии, дайте знать - алгоритм требует донастройки 😉",
-		startDate.Format("2 January"), endDate.Format("2 January"),
+		"Всем привет! 👾\n**Расписание для саппорт и релиз инженеров с %d %s по %d %s**\n**Релизы**\n@%s – Express Release\n@%s – Instances release\n\n**Саппорт**\n%s\n\nЛюбезно сгенерировано автоматически 🤖\nP.S. Если заметите аномалии, дайте знать – алгоритм требует донастройки 😉",
+		startDate.Day(), rt.Time(startDate).Month().StringInCase(), endDate.Day(), rt.Time(endDate).Month().StringInCase(),
 		expressEmployee.Nickname, instancesEmployee.Nickname, supportSchedule)
 
 	return result, schedule, nil
@@ -220,7 +174,7 @@ func AllEmployees(employees *[]models.DutySummary) string {
 		}
 
 		if employee.LastDutyDate.Valid {
-			result += fmt.Sprintf("%s (%d), последнее %s | ", getDutyTypeName(employee.DutyType), employee.DutyTypeCount, employee.LastDutyDate.Time.Format("2006.01.02"))
+			result += fmt.Sprintf("%s (%d), последнее %s | ", getDutyTypeName(employee.DutyType), employee.DutyTypeCount, employee.LastDutyDate.Time.Format("01.02.2006"))
 		} else {
 			result += getDutyTypeName(employee.DutyType)
 		}
